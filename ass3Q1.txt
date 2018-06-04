@@ -1,0 +1,122 @@
+# Michael Bulmer 201302218
+
+# 1. (6 marks) Create the above schemas in MySQL, using the CREATE TABLE statement.
+# Make sure that you define all possible keys, and that entity integrity and
+# referential integrity are guaranteed. Explain in detail any assumptions you may make.
+
+
+# I have not set and cascade etc to the table design.
+# The university system is using INNODB which by default will
+# restrict deletes of parents and children need to be
+# deleted first.  This seems reasonable for the situation.
+
+CREATE TABLE Book(
+  isbn      VARCHAR(13) PRIMARY KEY NOT NULL,
+  title     VARCHAR(30) NOT NULL,
+  publisher VARCHAR(20)
+);
+
+CREATE TABLE Author(
+  id   INT(20) AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(35) NOT NULL
+);
+
+CREATE TABLE Writes (
+  isbn VARCHAR(13) REFERENCES Book (isbn),
+  id   INT(20) REFERENCES Author (id),
+  PRIMARY KEY (isbn, id)
+
+);
+
+CREATE TABLE BookStore (
+  bsid    INT AUTO_INCREMENT PRIMARY KEY,
+  address VARCHAR(50),
+  bsname  VARCHAR(15) NOT NULL
+);
+
+CREATE TABLE Sells (
+  bsid INT REFERENCES BookStore (bsid),
+  isbn VARCHAR(13) REFERENCES Writes (isbn)
+);
+
+
+
+#(a) (2 marks) Find the addresses of all the bookstores, which sell the book with title ‘Database Systems’.
+
+#Assumed that the bookstore name would be useful to the user of this query
+
+SELECT bs.address as Address_Bookstores_Selling_Database_Systems, bs.bsname as Store
+FROM BookStore AS bs, Sells AS s, Book AS b
+WHERE s.isbn = b.isbn AND bs.bsid = s.bsid AND b.title = "Database Systems";
+
+# Find the titles of all the books written by ‘Agatha Christie’.
+
+SELECT b.title as Books_by_Agatha_Christie
+FROM Book AS b, Writes AS w, Author AS a
+WHERE a.id = w.id AND b.isbn = w.isbn AND a.name = "Agatha Christie";
+
+# Find the titles of the books which are written by ‘Agatha Christie’ but
+# not ‘Ian Rankin’.
+
+SELECT b.title as books_by_Agatha_Christie_and_not_Ian_Rankin
+FROM Book AS b, Writes AS w, Author AS a
+WHERE a.id = w.id AND b.isbn = w.isbn AND a.name = "Agatha Christie"
+      AND w.isbn NOT IN (SELECT w.isbn
+                         FROM Writes AS w, Author AS a
+                         WHERE a.name = "Ian Rankin" AND a.id = w.id);
+
+# If a book is written by more than one author, those authors ‘co-authored
+# ’ this book. Find the names of the authors who have written some ‘co-authored’
+#  books. Order the names in ascending order.
+
+
+SELECT DISTINCT a.name as 'Authors_who_have_Co-authored'
+FROM Writes AS w1, Writes AS w2, Author AS a
+WHERE w1.id <> w2.id AND w1.isbn = w2.isbn AND a.id = w1.id
+ORDER BY name;
+
+#
+# (e) (5 marks) List the names of the authors that wrote more than 5 books,
+#  along with the number of the books they wrote, in decreasing order of the number of books they wrote.
+
+SELECT
+  a.name as Author_More_Than_5_Books,
+  count(w.isbn) as Number_of_Books_Wrote
+FROM Author AS a, Writes AS w
+WHERE a.id = w.id
+GROUP BY w.id
+HAVING Number_of_Books_Wrote > 5
+ORDER BY Number_of_Books_Wrote DESC;
+
+# List the names of the bookstores that sell all books of ’Agatha Christie’.
+
+# Method 1 will show no stores if there are no Agatha Christie Books
+-- SELECT bs.bsname AS stores_selling_all_agatha_christie
+--
+-- FROM BookStore AS bs,
+--   Sells AS s, (
+--                 SELECT w.isbn
+--                 FROM Writes AS w, Author AS a
+--                 WHERE w.id = a.id AND a.name = 'Agatha Christie') AS listacbooks
+--
+-- WHERE s.isbn = listacbooks.isbn AND s.bsid = bs.bsid
+-- GROUP BY s.bsid
+-- HAVING count(s.bsid) = (
+--   SELECT count(w.isbn) AS TotalACbooks
+--   FROM Writes AS w, Author AS a
+--   WHERE w.id = a.id AND a.name = 'Agatha Christie');
+
+# Method 2 - will show all book stores if there are no Agatha Christie books.
+SELECT bs.bsname AS stores_selling_all_agatha_christie
+FROM BookStore AS bs
+WHERE NOT exists(SELECT b.isbn
+               FROM Book AS b
+               WHERE b.isbn IN
+                     (SELECT w.isbn
+                      FROM Writes AS w, Author AS a
+                      WHERE
+                        w.id = a.id AND a.name = 'Agatha Christie')
+                     AND
+                     NOT exists(SELECT s.bsid
+                                FROM Sells AS s
+                                WHERE s.bsid = bs.bsid AND b.isbn = s.isbn))

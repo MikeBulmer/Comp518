@@ -1,0 +1,125 @@
+# Michael Bulmer 201302218
+
+# I have not set and cascade etc to the table design.
+# The university system is using INNODB which by default will
+# restrict deletes of parents and children need to be
+# deleted first.  This seems reasonable for the situation.  There is an
+# argument that could me made that if a product is no longer sold then
+# it should be remove from all departments.  However as this isn't explicit
+# I don't want to place this restrict onto the database.  Perhaps this
+# could cause issues with seasonal products.  Or perhaps when an employee moves
+# between departments, if cascade is set then we could accidentally detail
+# the employees record.
+
+
+CREATE TABLE Employees (
+  eid   INT AUTO_INCREMENT NOT NULL ,
+  ename VARCHAR(25) NOT NULL,
+  eage  INT UNSIGNED,
+  PRIMARY KEY (eid)
+);
+
+
+CREATE TABLE Department (
+  did     INT UNSIGNED NOT NULL ,
+  dname   VARCHAR(20) NOT NULL ,
+  dtype   VARCHAR(20),
+  address VARCHAR(100),
+  PRIMARY KEY (did)
+);
+
+
+CREATE TABLE WorksIn (
+  eid  INT REFERENCES Employees(eid),
+  did  INT REFERENCES Department(did),
+  since DATE,
+  PRIMARY KEY (eid, did)
+);
+
+
+CREATE TABLE Products (
+  pid    VARCHAR(15),
+  pname  VARCHAR(20) NOT NULL,
+  ptype  VARCHAR(20),
+  pcolor VARCHAR(15),
+  PRIMARY KEY (pid)
+);
+
+
+CREATE TABLE Sells (
+  did      INT REFERENCES Department(did) ,
+  pid      VARCHAR(15) REFERENCES Products(pid),
+  quantity INT UNSIGNED,
+  PRIMARY KEY (did, pid)
+);
+
+
+# (a) (1 marks) Find the names of blue products.
+
+SELECT p.pname as Blue_Products
+FROM Products AS p
+WHERE pcolor = "Blue";
+
+# (b) (2 marks) Find the names of departments which sell blue products.
+
+SELECT DISTINCT d.dname as Departments_Which_Sell_Blue_Products
+#DISTINCT is required because if a department sells multiple blue products
+#there name will appear multiple times.
+FROM Products AS p, Department AS d, Sells AS s
+WHERE pcolor = "Blue" AND s.pid = p.pid AND d.did = s.did;
+
+# (c) (4 marks) Find the names of departments which sell blue products and do not have any employee older than 40.
+
+SELECT DISTINCT d.dname as Depts_sell_blue_not_over_40s
+FROM Products AS p, Department AS d, Sells AS s
+WHERE
+  s.pid = p.pid AND d.did = s.did AND
+  p.pcolor = "blue" AND d.did NOT IN (
+                                      SELECT w.did
+                                      FROM  Employees AS e, WorksIn AS w
+                                      WHERE w.eid = e.eid AND e.eage > 40
+                                    );
+
+# As above DISTINCT is required because if a department sells multiple blue products
+#there name will appear multiple times.
+
+
+# (d) (4 marks) For each department report the department-id and the age of the oldest employee working in it.
+
+SELECT
+  w.did as Deprtment_ID,
+  max(e.eage) as Oldest_Employee
+FROM WorksIn AS w, Employees AS e
+WHERE e.eid = w.eid
+GROUP BY w.did ;
+
+# (e) (4 marks) Find the names of employees who are older than at least one employee working in department ‘Central’.
+
+# Assumed that 'Central' is a department name and not type.
+SELECT
+  e.ename as employees_older_than_one_central_employee
+FROM Employees AS e
+WHERE eage > ANY (
+                  SELECT e.eage
+                  FROM WorksIn AS w, Employees AS e, Department AS d
+                  WHERE e.eid = w.eid AND d.did = w.did AND d.dname = "Central");
+
+# (f) (4 marks) Find the names of employees working in departments having no employees older than 40 years.
+
+SELECT e.ename as employees_in_depts_with_no_employees_olders_than_40
+FROM Employees AS e, WorksIn AS w
+WHERE e.eid = w.eid AND w.did NOT IN (
+                            SELECT w.did
+                            FROM Employees AS e, WorksIn AS w
+                            WHERE
+                              e.eage > 40 AND w.eid = e.eid);
+
+# (g) (5 marks) Find the names of employees working in departments which have sold at least 5 types of products.
+
+SELECT e.ename as Employees_in_Depts_sellings_5_or_more_products
+FROM Employees AS e, WorksIn AS w
+WHERE e.eid = w.eid AND w.did IN (
+                          SELECT s.did
+                          FROM Sells AS s
+                          GROUP BY s.did
+                          HAVING count(s.pid) >= 5);
